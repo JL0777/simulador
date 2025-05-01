@@ -85,17 +85,30 @@ class SistemaMasaResorte:
         self.fig = Figure(figsize=(5, 5), dpi=100)
         self.ax = self.fig.add_subplot(111)
         self.ax.axis('off')
+
+        # Fijar límites más amplios para que no se pierdan los objetos durante la oscilación
+        if self.modo == "vertical":
+            self.ax.set_xlim(0, 1)
+            self.ax.set_ylim(0, 1.5)  # Límite vertical ampliado para movimiento vertical
+        else:
+            self.ax.set_xlim(0, 1.5)  # Límite horizontal ampliado para movimiento horizontal
+            self.ax.set_ylim(0, 1)
         
-        # Fijar límites para que no se pierdan los objetos
-        self.ax.set_xlim(0, 1)
-        self.ax.set_ylim(0, 1)
+        # Fijar límites para que no se pierdan elementos
+        if self.modo == "vertical":
+            self.ax.set_xlim(0, 1)
+            self.ax.set_ylim(0, 1.8)  # Ajustado para acomodar el sistema más arriba
+        else:
+            self.ax.set_xlim(0, 1.5)
+            self.ax.set_ylim(0, 1)
         
         # Crear elementos visuales según el modo
+        # Crear elementos visuales según el modo
         if self.modo == "vertical":
-            self.punto_fijo = (0.5, 0.8)  # Punto fijo en la parte superior
-            self.punto_masa = (0.5, 0.5)  # Punto inicial de la masa
+            self.punto_fijo = (0.5, 1.2)  # Punto fijo en la parte superior (más arriba)
+            self.punto_masa = (0.5, 0.8)  # Punto inicial de la masa (más arriba)
             # Añadir base fija (soporte)
-            self.ax.add_patch(patches.Rectangle((0.4, 0.8), 0.2, 0.05, color='brown'))
+            self.ax.add_patch(patches.Rectangle((0.4, 1.2), 0.2, 0.05, color='brown'))
             # Añadir masa
             self.masa_obj = self.ax.add_patch(plt.Circle(self.punto_masa, 0.05, color='blue'))
             # Añadir resorte
@@ -120,6 +133,10 @@ class SistemaMasaResorte:
         # Etiqueta para el temporizador
         self.temporizador_label = ttk.Label(visualizacion_frame, text="Tiempo: 0.00 s")
         self.temporizador_label.pack(pady=5)
+
+        # Botón para mostrar gráficas
+        ttk.Button(visualizacion_frame, text="Ver Gráficas", 
+        command=self.mostrar_graficas).pack(pady=5)
 
     def _crear_entrada(self, frame, key, label, valor_default=""):
         """Crea un campo de entrada con etiqueta"""
@@ -194,12 +211,13 @@ class SistemaMasaResorte:
             masa_valor = 1.0
         
         # Recrear elementos visuales
+        # Recrear elementos visuales
         if self.modo == "vertical":
-            self.punto_fijo = (0.5, 0.8)
-            self.punto_masa = (0.5, 0.5)
+            self.punto_fijo = (0.5, 1.2)  # Movido más arriba
+            self.punto_masa = (0.5, 0.8)  # Movido más arriba
             
             # Añadir base fija
-            self.ax.add_patch(patches.Rectangle((0.4, 0.8), 0.2, 0.05, color='brown'))
+            self.ax.add_patch(patches.Rectangle((0.4, 1.2), 0.2, 0.05, color='brown'))
             
             # Añadir masa principal (radio proporcional a la masa)
             radio_masa = 0.05 * np.power(masa_valor/1.0, 1/3)  # Escala cúbica para el radio
@@ -257,11 +275,12 @@ class SistemaMasaResorte:
                 self.ax.plot(resorte_puntos[0], resorte_puntos[1], 'r-', lw=grosor)
         
         # Fijar límites para que no se pierdan elementos
-        self.ax.set_xlim(0, 1)
-        self.ax.set_ylim(0, 1)
-        
-        # Actualizar canvas
-        self.canvas.draw()
+        if self.modo == "vertical":
+            self.ax.set_xlim(0, 1)
+            self.ax.set_ylim(0, 1.5)  # Ampliado para movimiento vertical
+        else:
+            self.ax.set_xlim(0, 1.5)  # Ampliado para movimiento horizontal
+            self.ax.set_ylim(0, 1)
 
     def _actualizar_ecuacion(self):
         """Actualiza la ecuación diferencial según los parámetros actuales"""
@@ -440,6 +459,132 @@ class SistemaMasaResorte:
                     y[i] -= amplitud
                     
         return x, y
+    
+    def mostrar_graficas(self):
+        """Muestra una ventana emergente con 5 gráficas relacionadas con el sistema"""
+        # Obtener parámetros actuales
+        datos = self.get_datos()
+        
+        m = datos.get("masa", 1.0)
+        k = datos.get("k", 10.0)
+        c = datos.get("amortiguamiento", 0.5)
+        g = datos.get("gravedad", 9.8) if self.modo == "vertical" else 0.0
+        
+        # Función para el sistema de ecuaciones diferenciales
+        def sistema(t, y):
+            x, v = y
+            # Sumar fuerzas de componentes adicionales
+            fuerza_adicional = 0
+            for comp in self.componentes_adicionales:
+                if comp.tipo == "resorte":
+                    # Fuerza del resorte adicional F = -k(x-x0)
+                    k_extra = comp.datos["k"]
+                    pos = comp.datos["posicion"]
+                    fuerza_adicional -= k_extra * (x - pos)
+            
+            if self.modo == "vertical":
+                dvdt = (m * g - c * v - k * x + fuerza_adicional) / m
+            else:
+                dvdt = (-c * v - k * x + fuerza_adicional) / m
+                
+            return [v, dvdt]
+        
+        # Condiciones iniciales y resolución
+        y0 = [0.1, 0.0]  # Desplazamiento inicial y velocidad inicial
+        t_span = (0, 10)
+        t_eval = np.linspace(t_span[0], t_span[1], 500)
+        
+        # Resolver el sistema de ecuaciones diferenciales
+        sol = solve_ivp(sistema, t_span, y0, t_eval=t_eval)
+        
+        tiempos = sol.t
+        posiciones = sol.y[0]
+        velocidades = sol.y[1]
+        
+        # Calcular aceleración, energía cinética y potencial
+        aceleraciones = np.zeros_like(tiempos)
+        energia_cinetica = np.zeros_like(tiempos)
+        energia_potencial = np.zeros_like(tiempos)
+        energia_total = np.zeros_like(tiempos)
+        
+        for i in range(len(tiempos)):
+            # Calcular aceleración: a = F/m = (-kx - cv + mg)/m
+            if self.modo == "vertical":
+                aceleraciones[i] = (m * g - k * posiciones[i] - c * velocidades[i]) / m
+            else:
+                aceleraciones[i] = (-k * posiciones[i] - c * velocidades[i]) / m
+            
+            # Energía cinética: Ec = 0.5 * m * v²
+            energia_cinetica[i] = 0.5 * m * velocidades[i]**2
+            
+            # Energía potencial: Ep = 0.5 * k * x²
+            energia_potencial[i] = 0.5 * k * posiciones[i]**2
+            
+            # Energía total: Et = Ec + Ep
+            energia_total[i] = energia_cinetica[i] + energia_potencial[i]
+        
+        # Crear ventana emergente para las gráficas
+        graficas_ventana = tk.Toplevel(self.parent)
+        graficas_ventana.title(f"Gráficas Sistema {self.numero} ({self.modo})")
+        graficas_ventana.geometry("800x600")
+        
+        # Crear figura con subplots
+        fig = Figure(figsize=(10, 8))
+        
+        # Gráfica 1: Posición vs tiempo
+        ax1 = fig.add_subplot(321)
+        ax1.plot(tiempos, posiciones, 'b-')
+        ax1.set_title('Posición vs Tiempo')
+        ax1.set_xlabel('Tiempo (s)')
+        ax1.set_ylabel('Posición (m)')
+        ax1.grid(True)
+        
+        # Gráfica 2: Velocidad vs tiempo
+        ax2 = fig.add_subplot(322)
+        ax2.plot(tiempos, velocidades, 'g-')
+        ax2.set_title('Velocidad vs Tiempo')
+        ax2.set_xlabel('Tiempo (s)')
+        ax2.set_ylabel('Velocidad (m/s)')
+        ax2.grid(True)
+        
+        # Gráfica 3: Aceleración vs tiempo
+        ax3 = fig.add_subplot(323)
+        ax3.plot(tiempos, aceleraciones, 'r-')
+        ax3.set_title('Aceleración vs Tiempo')
+        ax3.set_xlabel('Tiempo (s)')
+        ax3.set_ylabel('Aceleración (m/s²)')
+        ax3.grid(True)
+        
+        # Gráfica 4: Energía vs tiempo
+        ax4 = fig.add_subplot(324)
+        ax4.plot(tiempos, energia_cinetica, 'g-', label='E. Cinética')
+        ax4.plot(tiempos, energia_potencial, 'b-', label='E. Potencial')
+        ax4.plot(tiempos, energia_total, 'r-', label='E. Total')
+        ax4.set_title('Energía vs Tiempo')
+        ax4.set_xlabel('Tiempo (s)')
+        ax4.set_ylabel('Energía (J)')
+        ax4.legend()
+        ax4.grid(True)
+        
+        # Gráfica 5: Diagrama de fase (posición vs velocidad)
+        ax5 = fig.add_subplot(325)
+        ax5.plot(posiciones, velocidades, 'k-')
+        ax5.set_title('Diagrama de Fase')
+        ax5.set_xlabel('Posición (m)')
+        ax5.set_ylabel('Velocidad (m/s)')
+        ax5.grid(True)
+        
+        # Ajustar layout
+        fig.tight_layout()
+        
+        # Añadir canvas a la ventana
+        canvas = FigureCanvasTkAgg(fig, master=graficas_ventana)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Botón para cerrar ventana
+        ttk.Button(graficas_ventana, text="Cerrar", 
+                command=graficas_ventana.destroy).pack(pady=5)
 
 
 class SimuladorInterfaz:
